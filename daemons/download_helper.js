@@ -1,9 +1,11 @@
 const Downloader = require("nodejs-file-downloader");
+const isRunning = require("./../utils/is_running");
+const constants = require("../constants");
 
 let pid = undefined;
 
 process.on("message", (data) => {
-  if (data.pid) pid = data.pid;
+  if (data.pid && typeof pid === "undefined") pid = data.pid;
 
   let options = {
     url: data.url,
@@ -24,7 +26,7 @@ process.on("message", (data) => {
   }
 
   options.shouldStop = (err) => {
-    if (err.statusCode && err.statusCode === 404) {
+    if (err.statusCode && err.statusCode >= 400) {
       return true;
     }
   };
@@ -33,17 +35,16 @@ process.on("message", (data) => {
 
   process.send({
     message: "Download starting...",
-    error: null,
     pid,
+    eventName: constants.Events.child_message,
   });
   downloader
     .download()
     .then(() => {
       process.send({
         message: "Download completed.",
-        error: null,
-        completed: true,
         pid,
+        eventName: constants.Events.child_completed,
       });
     })
     .catch((err) => {
@@ -51,13 +52,15 @@ process.on("message", (data) => {
         message: "Download error.",
         error: err,
         pid,
-        completed: false,
+        eventName: constants.Events.child_error,
       });
     });
 });
 
 process.on("disconnect", () => {
   if (typeof pid !== "undefined") {
-    process.kill(pid);
+    if (isRunning(pid)) {
+      process.kill(pid);
+    }
   }
 });
